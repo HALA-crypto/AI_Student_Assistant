@@ -8,12 +8,15 @@ from PIL import Image, ImageFilter
 from deep_translator import GoogleTranslator
 import edge_tts
 import PyPDF2
+import json
+import re
+import subprocess
 from groq import Groq
 st.title("AI Student Assistant 🤖")
 st.write("Your smart assistant for studying, translating, summarizing and more!")
 st.markdown("---")
 st.sidebar.title("📚Your Tools")
-tools = st.sidebar.radio("Select your tool:", ["🤖 AI Assistant", "🌍Translator", "📃PDF Summarizer", "🎙️Text To Speech", "🖼️Image Filter"])
+tools = st.sidebar.radio("Select your tool:", ["🤖 AI Assistant", "🌍Translator", "📃PDF Summarizer", "🎙️Text To Speech", "📄Extract Text From Audio or Video", "🖼️Image Filter"])
 if tools == "🤖 AI Assistant":
     st.subheader("🤖 AI Assistant")
     st.write("Ask me anything and I'll do my best to help you!")
@@ -184,7 +187,92 @@ elif tools == "🎙️Text To Speech":
             audio_bytes = asyncio.run(generate_audio(text, voice_id))
             st.audio(audio_bytes, format="audio/mp3")
         else:
-            st.warning("Please enter some text to convert to speech.") 
+            st.warning("Please enter some text to convert to speech.")
+elif tools == "📄Extract Text From Audio or Video":
+    st.title("Extract Text from Audio or Video")
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    st.subheader("Upload your audio or video file")
+    uploaded = st.file_uploader("Upload your file", type=["mp4", "mp3", "wav", "m4a", "ogg", "webm"])
+    def transcribe_audio_file(path):
+        with open(path, "rb") as f:
+            transcript = client.audio.transcriptions.create(
+                model="whisper-large-v3",
+                file=(os.path.basename(path), f),
+                response_format="text"
+            )
+        return transcript    
+    if uploaded:
+        if uploaded.size / 1024**2 > 25:
+            st.error("File size exceeds 25MB limit. Please upload a smaller file.")
+        elif st.button("Extract Text", key="file_btn"):
+            with st.spinner("Extracting text from audio/video..."):
+                ext = os.path.splitext(uploaded.name)[-1].lower()
+                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
+                    tmp_file.write(uploaded.read())
+                    path = tmp_file.name
+                try:
+                    transcript = transcribe_audio_file(path)
+                finally:
+                    os.unlink(path)    
+            if not transcript or len(transcript.strip()) < 5:
+                st.error("Could not extract text from the audio/video.")
+            else:
+                st.subheader("The Extracted Text:")
+                st.write(transcript)
+                st.download_button("Download Transcript", transcript, file_name="transcript.txt")
+    def parse_json3_sub(path):
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            lines = []
+            for event in data.get("events", []):
+                for segment in event.get("segs", []):
+                    word = segment.get("utf8", "").strip()
+                    if word and word != "\n":
+                        lines.append(word)
+            full_text = " ".join(lines)
+            return re.sub(r"\s+", " ", full_text).strip()
+    def get_yt_transcript(url):
+        temp_dir = tempfile.mkdtemp()
+        output_path = os.path.join(temp_dir, "subs")
+        for lang in ["en", "ar", ""]:
+            cmd = [
+                "yt-dlp", "--no-playlist", "--skip-download",
+                "--write-subs", "--write-auto-subs",
+                "--sub-format", "json3",
+                "-o", output_path,
+            ]
+            if lang :
+                cmd += ["--sub-langs", lang]
+            cmd.append(url)
+            subprocess.run(cmd, capture_output=True, text=True)
+            for f in os.listdir(temp_dir):
+                if f.endswith(".json3"):
+                    sub_path = os.path.join(temp_dir, f)
+                    text = parse_json3_sub(sub_path)
+                    for file in os.listdir(temp_dir):
+                        try:
+                            os.unlink(os.path.join(temp_dir, file)) 
+                        except:
+                            pass
+                    if text.strip():
+                        return text
+        raise ValueError("No subtitles found for the provided YouTube link.")
+    st.markdown("---")
+    st.subheader("Upload your YouTube video link")
+    youtube_link = st.text_input("Enter YouTube video link", placeholder="https://www.youtube.com/watch?v=...")
+    if youtube_link:
+        if "youtube.com" not in youtube_link and "youtu.be" not in youtube_link:
+            st.error("Please enter a valid YouTube link.")
+        elif st.button("Extract Text", key="yt_btn"):
+                try:
+                    with st.spinner("Extracting text from YouTube video..."):
+                        transcript = get_yt_transcript(youtube_link)
+                    st.subheader("The Extracted Text:")
+                    st.write(transcript)
+                    st.download_button("Download Transcript", transcript, file_name="transcript.txt")
+                except:
+                    st.error("Error extracting text from your YouTube video.")
+                    transcript = None
 elif tools == "🖼️Image Filter":
     st.subheader("🖼️Image Filter")
     st.write("Upload an image and apply different filters to enhance it!")
