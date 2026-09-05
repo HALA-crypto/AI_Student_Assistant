@@ -189,9 +189,9 @@ elif tools == "🎙️Text To Speech":
         else:
             st.warning("Please enter some text to convert to speech.")
 elif tools == "📄Extract Text From Audio or Video":
-    st.title("Extract Text from Audio or Video")
+    st.subheader("📄Extract Text from Audio or Video")
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-    st.subheader("Upload your audio or video file")
+    st.write("Upload your audio or video file or provide a YouTube link to extract text from it!")
     uploaded = st.file_uploader("Upload your file", type=["mp4", "mp3", "wav", "m4a", "ogg", "webm"])
     def transcribe_audio_file(path):
         with open(path, "rb") as f:
@@ -258,7 +258,6 @@ elif tools == "📄Extract Text From Audio or Video":
                         return text
         raise ValueError("No subtitles found for the provided YouTube link.")
     st.markdown("---")
-    st.subheader("Upload your YouTube video link")
     youtube_link = st.text_input("Enter YouTube video link", placeholder="https://www.youtube.com/watch?v=...")
     if youtube_link:
         if "youtube.com" not in youtube_link and "youtu.be" not in youtube_link:
